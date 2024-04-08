@@ -1,0 +1,16 @@
+Brainstorming different data tables that would be needed. 
+
+A. Users
+- unique: user_id
+- relationships: 
+  - friendships (self joined on user_id)
+- attributes:
+  - username, email, password, etc basic demographics
+
+B. Bar
+- unique: Bar_id
+- relationships:
+- attributes: 
+  - name, location, hours, etc basic demographics
+
+C. 
