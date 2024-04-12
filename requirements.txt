@@ -1,0 +1,14 @@
+Django
+djangorestframework
+mysqlclient
+django-allauth
+dj-rest-auth
+djangorestframework-simplejwt
+python-dotenv
+channels
+channels_redis
+celery
+redis
+Pillow
+django-cors-headers
+pytest

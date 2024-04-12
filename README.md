@@ -18,3 +18,24 @@ Backend: Python with Django or Flask frameworks for a robust, scalable server-si
 
 ## Objective: 
 To become the go-to platform for nightlife exploration by offering up-to-date, user-generated content that accurately reflects the current state of bars and clubs, thereby ensuring users have the best possible night out.
+
+## Getting Started:
+Build the latest changes to the docker image:
+`docker-compose build`
+
+Start up the Django web and MySQL database services:
+`docker-compose up`
+
+Open another terminal and apply Django migrations to set up the database schema.
+Note - If Django ORM is not being used by the application data this step is still 
+necessary as Django still uses ORM for built-in apps (such as the authentication system).
+`docker-compose exec web python manage.py migrate`
+
+When done running the services:
+`docker-compose down`
+or if persisted database data (volumes) is desired to be removed:
+`docker-compose down -v`
+
+Note: Be sure to regularly prune unused containers, images, and volumes
+as this can take up significant disk space over time:
+`docker system prune`
