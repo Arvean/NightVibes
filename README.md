@@ -25,6 +25,8 @@ Build the latest changes to the docker image:
 
 Start up the Django web and MySQL database services:
 `docker-compose up`
+or to run the services as background processes:
+`docker-compose up -d`
 
 Open another terminal and apply Django migrations to set up the database schema.
 Note - If Django ORM is not being used by the application data this step is still 
