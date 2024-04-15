@@ -1,0 +1,101 @@
+venue_id,venue_name,venue_address,venue_city,venue_state,phone_number
+1,Minyx,63 Beilfuss Junction,San Francisco,California,415-384-2678
+2,Fivechat,5821 Kedzie Pass,Tallahassee,Florida,850-818-0314
+3,Vipe,5 Badeau Park,Des Moines,Iowa,515-557-7735
+4,Wordtune,27269 Morningstar Plaza,Santa Cruz,California,831-192-8223
+5,Tanoodle,9 Schiller Crossing,Alexandria,Virginia,571-445-4405
+6,Browsedrive,97762 Stang Parkway,Cincinnati,Ohio,513-341-3293
+7,Yakidoo,621 Bowman Way,Baltimore,Maryland,443-993-7891
+8,Katz,97706 Sundown Road,Saint Louis,Missouri,314-426-9924
+9,Tagpad,53800 Morningstar Way,Saint Cloud,Minnesota,320-545-8590
+10,Rhynoodle,00 Harper Road,Plano,Texas,972-109-8515
+11,Wordtune,1 Lukken Trail,Frederick,Maryland,240-200-8149
+12,Leexo,901 Loomis Plaza,Duluth,Minnesota,218-628-1456
+13,Quimba,85560 Alpine Point,Lafayette,Louisiana,337-714-1842
+14,Wordify,85 Lakewood Gardens Junction,New York City,New York,212-917-0486
+15,Edgeify,45119 Lukken Plaza,Chattanooga,Tennessee,423-524-1480
+16,Meevee,930 Corscot Trail,Dallas,Texas,903-551-7431
+17,Edgeblab,5 Moland Center,New Orleans,Louisiana,504-218-7162
+18,Yakitri,89135 Monterey Crossing,San Diego,California,619-769-5731
+19,Katz,1645 Hagan Lane,Winston Salem,North Carolina,336-425-8427
+20,Jabbersphere,87 Pond Place,Salem,Oregon,503-130-4802
+21,Flashpoint,4 Meadow Valley Way,Ann Arbor,Michigan,734-417-6807
+22,Skidoo,6 Corry Junction,New Haven,Connecticut,203-161-1917
+23,Feedmix,24 Jenna Hill,Woburn,Massachusetts,339-928-6277
+24,Twiyo,9 Mandrake Circle,Tampa,Florida,813-208-1040
+25,Myworks,47568 Bowman Hill,Akron,Ohio,330-269-9148
+26,Lazzy,032 Dovetail Street,Dayton,Ohio,937-626-2153
+27,Einti,12 Johnson Crossing,Pasadena,California,626-915-0913
+28,Bubblemix,535 Washington Road,Houston,Texas,281-229-6422
+29,Camimbo,613 Artisan Avenue,Fort Myers,Florida,239-198-8330
+30,Youtags,94591 Union Plaza,Pittsburgh,Pennsylvania,412-572-7663
+31,Blogspan,21 Donald Plaza,Tallahassee,Florida,850-801-5703
+32,Blogtag,19 Fair Oaks Plaza,El Paso,Texas,915-824-0156
+33,Zoomzone,60461 Maple Wood Crossing,Englewood,Colorado,303-906-3559
+34,Aibox,75003 Melvin Hill,Rochester,New York,585-405-3329
+35,Jabbercube,487 Dakota Drive,Austin,Texas,512-245-2174
+36,Kamba,2609 Jenna Point,Ogden,Utah,801-886-7180
+37,Innotype,86510 Gale Place,Boise,Idaho,208-229-3612
+38,Blogtag,11 Westerfield Junction,Amarillo,Texas,806-598-4518
+39,Kazu,40 Mosinee Circle,Indianapolis,Indiana,317-280-3365
+40,Oodoo,163 Goodland Court,San Diego,California,858-826-9631
+41,Skipstorm,98 Sutherland Road,Saint Louis,Missouri,314-663-9953
+42,Feedmix,67 Waywood Parkway,Cincinnati,Ohio,513-370-2827
+43,Bubblebox,4 Vermont Crossing,Sacramento,California,510-500-9867
+44,Vidoo,46934 Rusk Road,Tucson,Arizona,520-515-4538
+45,Dazzlesphere,7 Loftsgordon Parkway,Tacoma,Washington,253-202-0343
+46,Devpulse,7 Paget Terrace,Fort Smith,Arkansas,479-203-7577
+47,Avaveo,9489 Northview Alley,Columbus,Ohio,614-701-9962
+48,Topdrive,03447 Loeprich Crossing,Knoxville,Tennessee,865-587-8253
+49,Skalith,876 Warrior Place,Tacoma,Washington,253-816-1968
+50,Rooxo,335 Summer Ridge Road,Savannah,Georgia,912-941-3694
+51,Zoomcast,63475 Larry Circle,Lincoln,Nebraska,402-926-3734
+52,Linkbridge,6906 Crest Line Alley,Colorado Springs,Colorado,719-166-9775
+53,Agimba,5 John Wall Court,Portland,Oregon,971-567-7577
+54,Kimia,23 Arrowood Avenue,Paterson,New Jersey,862-833-6056
+55,Aivee,27 Karstens Avenue,Grand Rapids,Michigan,616-217-2356
+56,Fivebridge,7327 Arrowood Hill,Des Moines,Iowa,515-783-2322
+57,Divanoodle,5972 Fieldstone Drive,Glendale,California,818-223-3867
+58,Gigaclub,354 Park Meadow Lane,Hayward,California,209-825-5821
+59,Eamia,53597 Debra Center,San Antonio,Texas,210-318-6624
+60,Mydeo,1548 Mockingbird Circle,Austin,Texas,512-761-8147
+61,Meejo,78 Eastlawn Terrace,Greenville,South Carolina,864-701-9026
+62,InnoZ,7981 Union Alley,Fort Smith,Arkansas,479-403-6528
+63,Zooxo,74196 Delladonna Crossing,Saint Paul,Minnesota,651-579-2166
+64,Aimbo,92782 Hansons Avenue,Minneapolis,Minnesota,612-220-0270
+65,Devbug,77588 Luster Lane,Louisville,Kentucky,502-897-5924
+66,Oyondu,233 Mcguire Court,Everett,Washington,425-301-3049
+67,Meembee,57 Buena Vista Hill,Fort Worth,Texas,682-385-8954
+68,Mydeo,118 Transport Point,Oklahoma City,Oklahoma,405-714-2538
+69,Tambee,2 Warbler Circle,Louisville,Kentucky,502-536-1963
+70,Fatz,3235 Paget Road,Pensacola,Florida,850-584-9816
+71,Zoovu,2971 Lake View Terrace,San Diego,California,619-722-8403
+72,Avamm,527 Mandrake Junction,Bronx,New York,718-472-7958
+73,Voolia,90616 Mayer Center,Houston,Texas,713-484-9776
+74,Twitterbridge,85 Thackeray Circle,Atlanta,Georgia,770-595-6594
+75,Jaxnation,46 Sachtjen Court,Tyler,Texas,903-298-4280
+76,Meevee,95538 Everett Point,Huntington,West Virginia,304-265-1928
+77,Mita,8763 Del Mar Crossing,Houston,Texas,713-461-6574
+78,Wikido,3 Anthes Hill,Young America,Minnesota,952-803-7434
+79,Devify,1 Monica Road,Washington,District of Columbia,202-975-2114
+80,Topiczoom,28 Forest Run Alley,Montgomery,Alabama,334-420-8360
+81,Fivespan,8 Old Gate Terrace,Seattle,Washington,206-988-8619
+82,Realcube,031 Luster Hill,Dallas,Texas,972-848-4996
+83,Jabbersphere,593 Lake View Place,Fort Lauderdale,Florida,954-306-6592
+84,Jabbercube,4012 Judy Place,Jacksonville,Florida,904-537-4869
+85,Chatterpoint,38 Morning Street,Indianapolis,Indiana,317-671-2719
+86,Edgeify,2 Boyd Circle,Birmingham,Alabama,205-439-3266
+87,Dynava,54 Warner Street,Arlington,Virginia,571-574-6059
+88,Zoozzy,9 Everett Plaza,Philadelphia,Pennsylvania,215-247-8265
+89,Zoomdog,192 Calypso Crossing,Birmingham,Alabama,205-634-2992
+90,Wikizz,4 Armistice Parkway,Pittsburgh,Pennsylvania,-7182
+91,Feedfish,4887 Rigney Court,Sioux City,Iowa,712-718-2378
+92,Oyope,49 Sutteridge Way,Washington,District of Columbia,202-134-4225
+93,Janyx,45339 Riverside Junction,Kansas City,Missouri,816-923-2891
+94,Dabtype,074 Forest Run Way,Erie,Pennsylvania,814-818-1499
+95,Gabvine,36 Arkansas Pass,San Antonio,Texas,210-556-8072
+96,Jetwire,76 Acker Crossing,Mobile,Alabama,251-699-5319
+97,Abata,1176 Northport Court,New York City,New York,646-854-9678
+98,Digitube,55 Logan Lane,Seattle,Washington,206-224-5668
+99,Tazz,3 Petterle Court,Bloomington,Indiana,812-991-6011
+100,Gabtune,830 Oakridge Circle,Saint Petersburg,Florida,727-599-5204
