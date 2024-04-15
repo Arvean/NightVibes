@@ -38,6 +38,11 @@ necessary as Django still uses ORM for built-in apps (such as the authentication
 
 `docker-compose exec web python manage.py migrate`
 
+Create a superuser:
+This step is necessary to access the Django admin panel. It only needs to be done once per database, unless the database is reset or recreated.
+
+`docker-compose exec web python manage.py createsuperuser`
+
 When done running the services:
 
 `docker-compose down`
