@@ -4,6 +4,7 @@ services:
     image: mysql:latest
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./init_db:/docker-entrypoint-initdb.d/init_db
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: Sounders2024
@@ -13,7 +14,7 @@ services:
 
   web:
     build: .
-    command: python manage.py runserver 0.0.0.0:8000
+    command: python manage.py migrate && python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app
     ports:

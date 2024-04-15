@@ -89,3 +89,15 @@ data/
 .git
 .gitattributes
 
+# VS Code
+.vscode/
+
+# JetBrains IDEs (IntelliJ IDEA, PyCharm, etc.)
+.idea/
+
+# Other possible directories depending on tools and IDEs used
+*.sublime-workspace
+*.sublime-project
+*.swp
+*.swo
+*~
