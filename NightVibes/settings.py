@@ -27,6 +27,9 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5MB
 
 # Application definition
 
@@ -37,7 +40,16 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_framework'
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'App'
+]
+
+# settings.py additions
+INSTALLED_APPS += [
+    'drf_yasg',  # For API documentation
+    'django_ratelimit',  # For rate limiting
+    'django_celery_beat',  # For periodic tasks
 ]
 
 MIDDLEWARE = [
@@ -51,11 +63,19 @@ MIDDLEWARE = [
 ]
 
 REST_FRAMEWORK = {
-    # Use Django's standard `django.contrib.auth` permissions,
-    # or allow read-only access for unauthenticated users.
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly',
-    ]
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',
+        'user': '1000/hour',
+        'checkins': '30/hour',  # Specific limit for check-ins
+    },
+    'EXCEPTION_HANDLER': 'nightvibes.utils.custom_exception_handler'
 }
 
 ROOT_URLCONF = 'NightVibes.urls'
@@ -84,12 +104,8 @@ WSGI_APPLICATION = 'NightVibes.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'NightVibes',  # The name of your database
-        'USER': 'postgres',  # Your database user
-        'PASSWORD': 'Sounders2024',  # Your database password
-        'HOST': 'db',  # The service name of your MySQL database in docker-compose.yml
-        'PORT': '3306',  # The default MySQL port
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 

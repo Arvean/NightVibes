@@ -1,28 +1,10 @@
 version: '3.8'
 services:
-  db:
-    image: mysql:latest
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./init_db:/docker-entrypoint-initdb.d/init_db
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: Sounders2024
-      MYSQL_DATABASE: NightVibes
-      MYSQL_USER: postgres
-      MYSQL_PASSWORD: Sounders2024
-
   web:
     build: .
-    command: python manage.py migrate && python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app
     ports:
       - "8000:8000"
-    depends_on:
-      - db
     environment:
-      - DATABASE_URL=mysql://postgres:Sounders2024@db/night_vibes_db
-
-volumes:
-  mysql_data:
+      - DEBUG=True

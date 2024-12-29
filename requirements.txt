@@ -1,14 +1,13 @@
-Django
-djangorestframework
-mysqlclient
-django-allauth
-dj-rest-auth
-djangorestframework-simplejwt
-python-dotenv
-channels
-channels_redis
-celery
-redis
-Pillow
-django-cors-headers
-pytest
+Django==4.2.7
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.0
+psycopg2-binary==2.9.9
+Pillow==10.1.0
+django-cors-headers==4.3.0
+django-filter==23.3
+drf-yasg==1.21.7  # For API documentation
+python-dotenv==1.0.0
+gunicorn==21.2.0
+whitenoise==6.6.0
+django-storages==1.14.2
+boto3==1.28.64  # For AWS S3 file storage
