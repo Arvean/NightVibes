@@ -101,3 +101,5 @@ data/
 *.swp
 *.swo
 *~
+
+credentials.json

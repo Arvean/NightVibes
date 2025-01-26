@@ -1,6 +1,33 @@
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.models import User
-from .models import UserProfile, FriendRequest, Venue, CheckIn
+from django.core.cache import cache
+from .models import UserProfile, FriendRequest, Venue, CheckIn, VenueRating, MeetupPing, DeviceToken, Notification
+
+class UserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+    
+    class Meta:
+        model = User
+        fields = ('id', 'username', 'email', 'password', 'first_name', 'last_name')
+        read_only_fields = ('id',)
+        
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            email=validated_data.get('email', ''),
+            password=validated_data['password'],
+            first_name=validated_data.get('first_name', ''),
+            last_name=validated_data.get('last_name', '')
+        )
+        return user
+        
+    def update(self, instance, validated_data):
+        # Remove password from update operation if it exists
+        if 'password' in validated_data:
+            password = validated_data.pop('password')
+            instance.set_password(password)
+        return super().update(instance, validated_data)
 
 class UserProfileSerializer(serializers.ModelSerializer):
     # TODO: Add more fine-grained controls "share location with friends only,
@@ -171,3 +198,37 @@ class MeetupPingSerializer(serializers.ModelSerializer):
             )
 
         return data
+
+class DeviceTokenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeviceToken
+        fields = ['id', 'device_type', 'token']
+        read_only_fields = ['id']
+
+    def create(self, validated_data):
+        user = self.context['request'].user
+        # Update or create the device token
+        token, created = DeviceToken.objects.update_or_create(
+            user=user,
+            token=validated_data['token'],
+            defaults={
+                'device_type': validated_data['device_type'],
+                'is_active': True
+            }
+        )
+        return token
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['id', 'type', 'title', 'message', 'data', 'is_read', 'created_at']
+        read_only_fields = ['id', 'type', 'title', 'message', 'data', 'created_at']
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        # Add custom claims
+        token['username'] = user.username
+        token['email'] = user.email
+        return token

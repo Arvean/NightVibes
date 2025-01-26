@@ -14,11 +14,10 @@ from .views import (
     CheckInDetailView,
     VenueRatingView,
     NearbyFriendsView,
+    MeetupPingViewSet,
+    DeviceTokenViewSet,
+    NotificationViewSet
 )
-
-router = DefaultRouter()
-router.register(r'friend-requests', FriendRequestViewSet, basename='friend-request')
-router.register(r'pings', MeetupPingViewSet, basename='ping')
 
 # The following URLs will be automatically generated:
 # - GET /api/pings/ - List all pings for the current user
@@ -29,11 +28,17 @@ router.register(r'pings', MeetupPingViewSet, basename='ping')
 # - POST /api/pings/{id}/accept/ - Accept a ping
 # - POST /api/pings/{id}/decline/ - Decline a ping
 
-app_name = 'nightvibes'
+# Add VenueDetailView to the router
+router = DefaultRouter()
+router.register(r'friend-requests', FriendRequestViewSet, basename='friend-request')
+router.register(r'pings', MeetupPingViewSet, basename='ping')
+router.register(r'venues', VenueDetailView, basename='venue')
+router.register(r'device-tokens', DeviceTokenViewSet, basename='device-token')
+router.register(r'notifications', NotificationViewSet, basename='notification')
 
 urlpatterns = [
+    # Include router URLs
     path('api/', include(router.urls)),
-    path('api/friends/', UserFriendsView.as_view(), name='user-friends'),
     
     # Authentication URLs
     path('api/auth/register/', RegisterView.as_view(), name='register'),
@@ -41,18 +46,11 @@ urlpatterns = [
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     
     # User and Profile URLs
-    path('api/profiles/', UserProfileListView.as_view(), name='profile-list'),
-    path('api/profiles/<int:pk>/', UserProfileDetailView.as_view(), name='profile-detail'),
-    path('api/friend-requests/', FriendRequestListView.as_view(), name='friend-request-list'),
-    path('api/friend-requests/<int:pk>/', FriendRequestDetailView.as_view(), name='friend-request-detail'),
+    path('api/profile/', UserProfileView.as_view(), name='user-profile'),
+    path('api/friends/', UserFriendsView.as_view(), name='user-friends'),
     path('api/friends/nearby/', NearbyFriendsView.as_view(), name='nearby-friends'),
+    path('api/friend-requests/list/', FriendRequestListCreateView.as_view(), name='friend-request-list-create'),
 
-    # Venue URLs
-    path('api/venues/', VenueListView.as_view(), name='venue-list'),
-    path('api/venues/<int:pk>/', VenueDetailView.as_view(), name='venue-detail'),
-    path('api/venues/<int:pk>/current-vibe/', 
-         VenueDetailView.as_view({'get': 'current_vibe'}), name='venue-current-vibe'),
-    
     # Check-in URLs
     path('api/checkins/', CheckInListView.as_view(), name='checkin-list'),
     path('api/checkins/<int:pk>/', CheckInDetailView.as_view(), name='checkin-detail'),

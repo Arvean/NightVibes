@@ -1,16 +1,15 @@
 #!/bin/bash
 
-# Exit immediately if a command exits with a non-zero status
-set -e
+# Wait for postgres to be ready
+echo "Waiting for postgres..."
+while ! nc -z db 5432; do
+  sleep 0.1
+done
+echo "PostgreSQL started"
 
-# Make database migrations
-echo "Making migrations..."
-python3 manage.py makemigrations
-
-# Apply database migrations
-echo "Applying migrations..."
-python3 manage.py migrate
+# Make migrations and migrate
+python manage.py makemigrations
+python manage.py migrate
 
 # Start server
-echo "Starting server..."
 exec "$@"

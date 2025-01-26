@@ -11,3 +11,7 @@ gunicorn==21.2.0
 whitenoise==6.6.0
 django-storages==1.14.2
 boto3==1.28.64  # For AWS S3 file storage
+django-ratelimit==3.0.1
+django-celery-beat==2.5.0
+firebase-admin>=6.0.0
+psycopg2-binary==2.9.9
