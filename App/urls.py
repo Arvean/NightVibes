@@ -57,5 +57,5 @@ urlpatterns = [
     
     # Rating URLs
     path('api/ratings/', VenueRatingView.as_view(), name='venue-ratings'),
-
+    path('api/ratings/<int:pk>/', VenueRatingView.as_view(), name='venue-rating-detail'),
 ]

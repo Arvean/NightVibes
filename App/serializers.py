@@ -2,6 +2,8 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.models import User
 from django.core.cache import cache
+from django.utils import timezone
+from django.db.models import Count
 from .models import UserProfile, FriendRequest, Venue, CheckIn, VenueRating, MeetupPing, DeviceToken, Notification
 
 class UserSerializer(serializers.ModelSerializer):
@@ -30,69 +32,63 @@ class UserSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    # TODO: Add more fine-grained controls "share location with friends only,
-    # hide location from certain friends, etc."
     username = serializers.CharField(source='user.username', read_only=True)
     email = serializers.EmailField(source='user.email', read_only=True)
-    
+
     class Meta:
         model = UserProfile
-        fields = ['id', 'username', 'email', 'bio', 'location_sharing', 
+        fields = ['id', 'username', 'email', 'bio', 'location_sharing',
                  'last_location_lat', 'last_location_lng', 'profile_picture']
         read_only_fields = ['id']
 
-    def validate(self, data):
-        # Validate location updates
-        if not data.get('location_sharing', self.instance and self.instance.location_sharing):
-            if data.get('last_location_lat') or data.get('last_location_lng'):
-                raise serializers.ValidationError({
-                    'location_sharing': 'Cannot update location while location sharing is disabled'
-                })
-        
-        return data
-
-    def update(self, instance, validated_data):
-        # Handle profile picture update
-        if 'profile_picture' in validated_data:
-            # Delete old picture if it exists
-            if instance.profile_picture:
-                old_picture_path = instance.profile_picture.path
-                if os.path.exists(old_picture_path):
-                    os.remove(old_picture_path)
-        
-        return super().update(instance, validated_data)
+    def validate_profile_picture(self, value):
+        if value:
+            # Validate file type
+            valid_types = ['image/jpeg', 'image/png', 'image/gif']
+            if value.content_type not in valid_types:
+                raise serializers.ValidationError(
+                    "Invalid file type. Only JPEG, PNG and GIF are allowed."
+                )
+            
+            # Validate file size (5MB limit)
+            if value.size > 5 * 1024 * 1024:
+                raise serializers.ValidationError(
+                    "File too large. Maximum size is 5MB."
+                )
+        return value
 
 class FriendRequestSerializer(serializers.ModelSerializer):
-    sender_username = serializers.CharField(source='sender.user.username', read_only=True)
-    receiver_username = serializers.CharField(source='receiver.user.username', read_only=True)
-
     class Meta:
         model = FriendRequest
-        fields = ['id', 'sender', 'receiver', 'sender_username', 
-                 'receiver_username', 'status', 'created_at']
-        read_only_fields = ['id', 'sender_username', 'receiver_username', 
-                           'created_at']
+        fields = ['id', 'receiver', 'status', 'created_at']
+        read_only_fields = ['id', 'status', 'created_at']
 
     def validate(self, data):
-        sender = data.get('sender')
-        receiver = data.get('receiver')
+        if 'receiver' in data:
+            if isinstance(data['receiver'], (int, str)):
+                try:
+                    data['receiver'] = UserProfile.objects.get(id=data['receiver'])
+                except UserProfile.DoesNotExist:
+                    raise serializers.ValidationError("Invalid receiver profile ID")
 
-        if sender == receiver:
-            raise serializers.ValidationError("Cannot send friend request to yourself")
-
-        # Check if a friend request already exists
-        existing_request = FriendRequest.objects.filter(
-            sender=sender,
-            receiver=receiver,
-            status='pending'
-        ).exists()
-
-        if existing_request:
-            raise serializers.ValidationError("A pending friend request already exists")
-
-        # Check if users are already friends
-        if sender.friends.filter(id=receiver.id).exists():
-            raise serializers.ValidationError("Users are already friends")
+            # Get the sender's profile
+            sender_profile = self.context['request'].user.profile
+            
+            # Check for self-request
+            if sender_profile.id == data['receiver'].id:
+                raise serializers.ValidationError("Cannot send friend request to yourself")
+                
+            # Check if already friends
+            if sender_profile.friends.filter(id=data['receiver'].id).exists():
+                raise serializers.ValidationError("Users are already friends")
+                
+            # Check for existing pending request
+            if FriendRequest.objects.filter(
+                sender=sender_profile,
+                receiver=data['receiver'],
+                status='pending'
+            ).exists():
+                raise serializers.ValidationError("A pending request already exists")
 
         return data
 
@@ -127,22 +123,20 @@ class VenueSerializer(serializers.ModelSerializer):
         return vibe
 
 class CheckInSerializer(serializers.ModelSerializer):
-    user = serializers.StringRelatedField(read_only=True)
-    venue = VenueSerializer(read_only=True)
-    venue_id = serializers.PrimaryKeyRelatedField(
-        queryset=Venue.objects.all(),
-        write_only=True
-    )
+    venue_id = serializers.IntegerField()
 
     class Meta:
         model = CheckIn
-        fields = ['id', 'user', 'venue', 'venue_id', 'timestamp', 
-                 'vibe_rating', 'visibility']
-        read_only_fields = ['id', 'timestamp']
+        fields = ['id', 'venue_id', 'vibe_rating', 'visibility']
 
     def create(self, validated_data):
-        venue = validated_data.pop('venue_id')
         user = self.context['request'].user
+        venue_id = validated_data.pop('venue_id')
+        try:
+            venue = Venue.objects.get(id=venue_id)
+        except Venue.DoesNotExist:
+            raise serializers.ValidationError({'venue_id': 'Venue not found'})
+            
         return CheckIn.objects.create(
             user=user,
             venue=venue,
@@ -164,6 +158,17 @@ class VenueRatingSerializer(serializers.ModelSerializer):
         if not request or not request.user.is_authenticated:
             raise serializers.ValidationError("Must be authenticated to rate venue")
             
+        # Check for existing rating
+        existing_rating = VenueRating.objects.filter(
+            user=request.user,
+            venue=validated_data['venue']
+        ).first()
+        
+        if existing_rating:
+            raise serializers.ValidationError({
+                "detail": "You have already rated this venue"
+            })
+            
         validated_data['user'] = request.user
         return super().create(validated_data)
 
@@ -172,30 +177,39 @@ class MeetupPingSerializer(serializers.ModelSerializer):
     receiver_username = serializers.CharField(source='receiver.username', read_only=True)
     venue_name = serializers.CharField(source='venue.name', read_only=True)
     
+class MeetupPingSerializer(serializers.ModelSerializer):
+    sender_username = serializers.SerializerMethodField()
+    receiver_username = serializers.SerializerMethodField()
+    venue_name = serializers.SerializerMethodField()
+
     class Meta:
         model = MeetupPing
         fields = ['id', 'sender', 'receiver', 'venue', 'status', 'message',
                  'created_at', 'expires_at', 'response_message',
                  'sender_username', 'receiver_username', 'venue_name']
-        read_only_fields = ['id', 'created_at', 'sender_username', 
-                           'receiver_username', 'venue_name']
+        read_only_fields = ['id', 'created_at', 'sender']
+
+    def get_sender_username(self, obj):
+        return obj.sender.username if obj.sender else None
+
+    def get_receiver_username(self, obj):
+        return obj.receiver.username if obj.receiver else None
+
+    def get_venue_name(self, obj):
+        return obj.venue.name if obj.venue else None
 
     def validate(self, data):
-        # Verify the receiver is a friend of the sender
-        sender = self.context['request'].user
-        receiver = data.get('receiver')
-        
-        if not sender.profile.friends.filter(user=receiver).exists():
-            raise serializers.ValidationError(
-                "Can only send pings to friends"
-            )
+        if 'receiver' in data and isinstance(data['receiver'], (int, str)):
+            try:
+                data['receiver'] = User.objects.get(id=data['receiver'])
+            except User.DoesNotExist:
+                raise serializers.ValidationError("Invalid receiver ID")
 
-        # Verify the expiration time is in the future
-        expires_at = data.get('expires_at')
-        if expires_at and expires_at <= timezone.now():
-            raise serializers.ValidationError(
-                "Expiration time must be in the future"
-            )
+        if 'venue' in data and isinstance(data['venue'], (int, str)):
+            try:
+                data['venue'] = Venue.objects.get(id=data['venue'])
+            except Venue.DoesNotExist:
+                raise serializers.ValidationError("Invalid venue ID")
 
         return data
 

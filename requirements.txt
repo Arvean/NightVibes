@@ -5,13 +5,21 @@ psycopg2-binary==2.9.9
 Pillow==10.1.0
 django-cors-headers==4.3.0
 django-filter==23.3
-drf-yasg==1.21.7  # For API documentation
+drf-yasg==1.21.7
 python-dotenv==1.0.0
 gunicorn==21.2.0
 whitenoise==6.6.0
 django-storages==1.14.2
-boto3==1.28.64  # For AWS S3 file storage
+boto3==1.28.64
 django-ratelimit==3.0.1
 django-celery-beat==2.5.0
 firebase-admin>=6.0.0
-psycopg2-binary==2.9.9
+redis>=5.0.1  # Added Redis client
+
+# Testing packages
+coverage>=7.2.0
+django-nose>=1.4.7
+factory-boy>=3.3.0  # For generating test data
+faker>=19.3.0  # For generating fake data in tests
+pytest>=7.4.0  # Alternative testing framework
+pytest-django>=4.5.2  # Django support for pytest

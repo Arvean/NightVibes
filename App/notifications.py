@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db.models import Q
 from datetime import timedelta
 from django.utils import timezone
+from .models import Notification, DeviceToken
 
 # Initialize Firebase Admin SDK
 cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
@@ -33,38 +34,30 @@ class NotificationService:
             is_active=True
         ).values_list('token', flat=True)
 
+        # If no devices, just save the notification
         if not device_tokens:
-            return False
-
-        # Prepare the message
-        message = messaging.MulticastMessage(
-            notification=messaging.Notification(
-                title=title,
-                body=message,
-            ),
-            data=data,
-            tokens=list(device_tokens),
-        )
+            return True
 
         try:
+            # Prepare the message
+            message = messaging.MulticastMessage(
+                notification=messaging.Notification(
+                    title=title,
+                    body=message,
+                ),
+                data=data,
+                tokens=list(device_tokens),
+            )
+            
             # Send the message
             response = messaging.send_multicast(message)
             
-            # Handle failed tokens
-            if response.failure_count > 0:
-                failed_tokens = []
-                for idx, result in enumerate(response.responses):
-                    if not result.success:
-                        failed_tokens.append(device_tokens[idx])
-                
-                # Deactivate failed tokens
-                DeviceToken.objects.filter(token__in=failed_tokens).update(
-                    is_active=False
-                )
-
-            return response.success_count > 0
+            # Update notification status
+            notification.is_sent = response.success_count > 0
+            notification.save()
+            
+            return notification.is_sent
         except Exception as e:
-            # Log the error
             print(f"Error sending notification: {str(e)}")
             return False
 

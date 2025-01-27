@@ -1,10 +1,13 @@
 # Django imports
 from django.contrib.auth.models import User
 from django.contrib.gis.db.models.functions import Distance
+from django.contrib.gis.measure import D
 from django.contrib.gis.geos import Point
-from django.db.models import Count, Q
+from django.db.models import Count, Q, F
 from django.utils import timezone
 from django.db import transaction
+from django.shortcuts import get_object_or_404  # Add this import
+from django.http import Http404
 
 # Rest Framework imports
 from rest_framework import generics, permissions, status, viewsets
@@ -12,8 +15,10 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.parsers import MultiPartParser, FormParser  # Add this import at the top
 
 from .serializers import CustomTokenObtainPairSerializer
+from .notifications import NotificationService  # Create this file
 
 
 # Local imports
@@ -47,7 +52,6 @@ class RegisterView(generics.CreateAPIView):
 
     def perform_create(self, serializer):
         user = serializer.save()
-        UserProfile.objects.create(user=user)
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = UserSerializer
@@ -55,9 +59,54 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = UserProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser)
 
     def get_object(self):
         return self.request.user.profile
+
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        
+        # Handle profile picture update
+        if 'profile_picture' in self.request.FILES:
+            # Delete old picture if it exists
+            if instance.profile_picture:
+                try:
+                    instance.profile_picture.delete(save=False)
+                except Exception as e:
+                    print(f"Error deleting profile picture: {e}")
+        
+        serializer.save()
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+
+        # Handle file validation
+        if 'profile_picture' in request.FILES:
+            file = request.FILES['profile_picture']
+            if not file.content_type.startswith('image/'):
+                return Response(
+                    {'error': 'Invalid file type. Only images are allowed.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Check file size (5MB limit)
+            if file.size > 5 * 1024 * 1024:
+                return Response(
+                    {'error': 'File too large. Maximum size is 5MB.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        serializer = self.get_serializer(
+            instance,
+            data=request.data,
+            partial=partial
+        )
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        return Response(serializer.data)
 
 class FriendRequestListCreateView(generics.ListCreateAPIView):
     serializer_class = FriendRequestSerializer
@@ -81,10 +130,28 @@ class FriendRequestViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     queryset = FriendRequest.objects.all()
 
+    def perform_create(self, serializer):
+        friend_request = serializer.save(
+            sender=self.request.user.profile
+        )
+        
+        # Send notification
+        NotificationService.send_to_user(
+            user=friend_request.receiver.user,
+            notification_type='friend_request',
+            title='New Friend Request',
+            message=f'{self.request.user.username} sent you a friend request',
+            data={
+                'type': 'friend_request',
+                'sender_id': str(self.request.user.id)
+            }
+        )
+        return friend_request
+
     def get_queryset(self):
-        user = self.request.user
+        user_profile = self.request.user.profile
         return FriendRequest.objects.filter(
-            Q(sender=user) | Q(receiver=user)
+            Q(sender=user_profile) | Q(receiver=user_profile)
         )
 
     @action(detail=True, methods=['POST'])
@@ -156,31 +223,38 @@ class UserFriendsView(generics.RetrieveAPIView):
 class VenueListView(generics.ListCreateAPIView):
     serializer_class = VenueSerializer
     permission_classes = [permissions.AllowAny]
-    filterset_fields = ['category']
-    
+
     def get_queryset(self):
         queryset = Venue.objects.all()
-        
-        lat = self.request.query_params.get('latitude')
-        lng = self.request.query_params.get('longitude')
-        radius = float(self.request.query_params.get('radius', 5000))
-        
-        if lat and lng:
-            user_location = Point(float(lng), float(lat), srid=4326)
-            queryset = queryset.annotate(
-                distance=Distance('location', user_location)
-            ).filter(distance__lte=radius)
-            
-            queryset = queryset.select_related('location')\
-                              .prefetch_related('ratings')\
-                              .order_by('distance')
-        
+        search = self.request.query_params.get('search', None)
+        category = self.request.query_params.get('category', None)
+
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        if category:
+            queryset = queryset.filter(category__iexact=category)
+
         return queryset
 
 class VenueDetailView(viewsets.ModelViewSet):
     queryset = Venue.objects.all()
     serializer_class = VenueSerializer
     permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        search = self.request.query_params.get('search', None)
+        category = self.request.query_params.get('category', None)
+        
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) |
+                Q(description__icontains=search)
+            )
+        if category:
+            queryset = queryset.filter(category__iexact=category)
+            
+        return queryset
 
     @action(detail=True, methods=['get'])
     def current_vibe(self, request, pk=None):
@@ -224,14 +298,7 @@ class CheckInListView(generics.ListCreateAPIView):
 
     @transaction.atomic
     def perform_create(self, serializer):
-        """Create check-in with transaction safety"""
-        check_in = serializer.save(user=self.request.user)
-        
-        # Update venue cache
-        cache_key = f'venue_vibe_{check_in.venue.id}'
-        cache.delete(cache_key)
-        
-        # Notify nearby friends
+        check_in = serializer.save()
         self._notify_nearby_friends(check_in)
 
     def _notify_nearby_friends(self, check_in):
@@ -261,48 +328,65 @@ class CheckInDetailView(generics.RetrieveDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return CheckIn.objects.filter(user=self.request.user)
+        user_profile = self.request.user.profile
+        friend_ids = user_profile.friends.values_list('user__id', flat=True)
+        return CheckIn.objects.filter(
+            Q(user=self.request.user) |  # Own check-ins
+            Q(user_id__in=friend_ids, visibility='friends') |  # Friends' check-ins
+            Q(visibility='public')  # Public check-ins
+        )
 
-class VenueRatingView(generics.ListCreateAPIView):
+class VenueRatingView(generics.ListCreateAPIView, generics.UpdateAPIView):
     serializer_class = VenueRatingSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        venue_id = self.request.query_params.get('venue_id')
-        if venue_id:
-            return VenueRating.objects.filter(venue_id=venue_id)
-        return VenueRating.objects.none()
+        return VenueRating.objects.filter(user=self.request.user)
 
-    def perform_create(self, serializer):
+    def get_object(self):
+        try:
+            return VenueRating.objects.get(
+                id=self.kwargs.get('pk'),
+                user=self.request.user
+            )
+        except VenueRating.DoesNotExist:
+            raise Http404
+
+    def perform_update(self, serializer):
         serializer.save(user=self.request.user)
 
 class NearbyFriendsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        lat = request.query_params.get('latitude')
-        lng = request.query_params.get('longitude')
-        radius = float(request.query_params.get('radius', 1000))  # Default 1km
-
-        if not (lat and lng):
+        try:
+            lat = float(request.query_params.get('latitude'))
+            lng = float(request.query_params.get('longitude'))
+            radius = float(request.query_params.get('radius', 1000))
+        except (TypeError, ValueError):
             return Response(
-                {'error': 'Location parameters required'}, 
+                {"error": "Invalid coordinates or radius"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        user_location = Point(float(lng), float(lat), srid=4326)
-        friend_ids = request.user.profile.friends.values_list('user__id', flat=True)
+        user_location = Point(lng, lat, srid=4326)
+        friend_ids = request.user.profile.friends.values_list('id', flat=True)
 
-        nearby_friends = CheckIn.objects.filter(
-            user_id__in=friend_ids,
-            timestamp__gte=timezone.now() - timezone.timedelta(hours=3)
+        # Create annotated queryset without Point construction in annotation
+        nearby_friends = UserProfile.objects.filter(
+            id__in=friend_ids,
+            location_sharing=True,
+            last_location_lat__isnull=False,
+            last_location_lng__isnull=False
         ).annotate(
-            distance=Distance('venue__location', user_location)
-        ).filter(distance__lte=radius).select_related('user', 'venue')
+            distance=Distance(
+                Point(F('last_location_lng'), F('last_location_lat'), srid=4326),
+                user_location
+            )
+        ).filter(distance__lte=radius)
 
-        return Response({
-            'nearby_friends': CheckInSerializer(nearby_friends, many=True).data
-        })
+        serializer = UserProfileSerializer(nearby_friends, many=True)
+        return Response({'nearby_friends': serializer.data})
 
 class MeetupPingViewSet(viewsets.ModelViewSet):
     serializer_class = MeetupPingSerializer

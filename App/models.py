@@ -11,6 +11,8 @@ from django.dispatch import receiver
 from django.utils import timezone
 from django.contrib.gis.geos import Point
 from django.db.models import Count, Q
+from django.utils import timezone
+from datetime import timedelta
 import os
 
 
@@ -28,7 +30,7 @@ def validate_image_size(value):
 # Extends the built-in Django User model with additional fields for the application
 # Handles user relationships, location sharing, and profile customization
 class UserProfile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     bio = models.TextField(max_length=500, blank=True)
     location_sharing = models.BooleanField(default=False)
     last_location_lat = models.FloatField(null=True, blank=True)
@@ -98,16 +100,16 @@ class UserProfile(models.Model):
 # Creates and saves UserProfile when a new User is created
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):
+    """Creates UserProfile when a new User is created"""
     if created:
         UserProfile.objects.create(user=instance)
 
 @receiver(post_save, sender=User)
 def save_user_profile(sender, instance, **kwargs):
-    try:
-        instance.profile.save()
-    except UserProfile.DoesNotExist:
-        UserProfile.objects.create(user=instance)
+    """Saves UserProfile when User is saved"""
+    instance.profile.save()
 
+        
 # FriendRequest Model
 # Manages friend requests between users with status tracking
 # Enforces validation rules for friend relationships
@@ -347,17 +349,22 @@ class DeviceToken(models.Model):
             models.Index(fields=['token'])
         ]
 
-    @classmethod
-    def cleanup_inactive(cls):
-        """Cleanup inactive tokens older than 30 days"""
-        threshold = timezone.now() - timezone.timedelta(days=30)
-        cls.objects.filter(
-            is_active=False,
-            last_used__lt=threshold
-        ).delete()
-
     def __str__(self):
         return f"{self.user.username}'s {self.device_type} device"
+
+    @classmethod
+    def cleanup_inactive(cls):
+        """Clean up tokens that have been inactive for more than 30 days"""
+        threshold = timezone.now() - timedelta(days=30)
+        # First count the tokens that will be deleted
+        to_delete = cls.objects.filter(
+            is_active=False,
+            last_used__lt=threshold
+        )
+        count = to_delete.count()
+        # Then delete them
+        to_delete.delete()
+        return count
 
 class Notification(models.Model):
     NOTIFICATION_TYPES = [
