@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.models import User
+from django.contrib.gis.geos import Point
 from django.core.cache import cache
 from django.utils import timezone
 from django.db.models import Count
@@ -34,12 +35,39 @@ class UserSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
     email = serializers.EmailField(source='user.email', read_only=True)
+    latitude = serializers.FloatField(write_only=True, required=False)
+    longitude = serializers.FloatField(write_only=True, required=False)
+    current_location = serializers.SerializerMethodField()
 
     class Meta:
         model = UserProfile
         fields = ['id', 'username', 'email', 'bio', 'location_sharing',
-                 'last_location_lat', 'last_location_lng', 'profile_picture']
+                 'latitude', 'longitude', 'current_location', 'profile_picture']
         read_only_fields = ['id']
+
+    def get_current_location(self, obj):
+        """Returns the current location as a lat/lng dict if sharing is enabled"""
+        if obj.location_sharing and obj.location:
+            return {
+                'latitude': obj.location.y,
+                'longitude': obj.location.x
+            }
+        return None
+
+    def validate(self, data):
+        """Validate location data"""
+        latitude = data.pop('latitude', None)
+        longitude = data.pop('longitude', None)
+        
+        if latitude is not None and longitude is not None:
+            data['location'] = Point(longitude, latitude)
+        elif (latitude is not None) != (longitude is not None):
+            raise serializers.ValidationError(
+                "Both latitude and longitude must be provided together"
+            )
+            
+        return data
+
 
     def validate_profile_picture(self, value):
         if value:

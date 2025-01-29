@@ -33,8 +33,7 @@ class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     bio = models.TextField(max_length=500, blank=True)
     location_sharing = models.BooleanField(default=False)
-    last_location_lat = models.FloatField(null=True, blank=True)
-    last_location_lng = models.FloatField(null=True, blank=True)
+    location = gis_models.PointField(null=True, blank=True, srid=4326)
     profile_picture = models.ImageField(
         upload_to='profile_pics/',
         validators=[
@@ -50,14 +49,14 @@ class UserProfile(models.Model):
         return f"{self.user.username}'s profile"
 
     def clean(self):
-        # Ensures location data is only stored when location sharing is enabled
-        if not self.location_sharing and (self.last_location_lat or self.last_location_lng):
+        # Updated location validation
+        if not self.location_sharing and self.location:
             raise ValidationError({
                 'location_sharing': 'Cannot update location while location sharing is disabled'
             })
 
     def save(self, *args, **kwargs):
-        # Handle profile picture cleanup
+        # Handle profile picture cleanup (unchanged)
         if self.pk:
             try:
                 old_instance = UserProfile.objects.get(pk=self.pk)
@@ -69,15 +68,21 @@ class UserProfile(models.Model):
             except UserProfile.DoesNotExist:
                 pass
             
-        # Handle location sharing validation
+        # Updated location handling
         if not self.location_sharing:
-            self.last_location_lat = None
-            self.last_location_lng = None
+            self.location = None
             
         super().save(*args, **kwargs)
         
-        # Invalidate cache after save
+        # Cache invalidation (unchanged)
         cache.delete(f'user_friend_count_{self.id}')
+
+    def update_location(self, lat, lng):
+        """Updates user's location if location sharing is enabled"""
+        if not self.location_sharing:
+            raise ValidationError("Location sharing is disabled")
+        self.location = Point(lng, lat)  # Note: Point takes (x,y) which is (longitude,latitude)
+        self.save()
 
     def get_friend_count(self):
         """Get cached friend count"""
@@ -383,6 +388,7 @@ class Notification(models.Model):
     data = models.JSONField(default=dict)  # Additional data payload
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    is_sent = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['-created_at']

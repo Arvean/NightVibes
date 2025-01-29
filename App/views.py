@@ -15,10 +15,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework.parsers import MultiPartParser, FormParser  # Add this import at the top
+from rest_framework.parsers import MultiPartParser, FormParser
 
 from .serializers import CustomTokenObtainPairSerializer
 from .notifications import NotificationService  # Create this file
+
+from io import BytesIO
+from PIL import Image
 
 
 # Local imports
@@ -302,26 +305,22 @@ class CheckInListView(generics.ListCreateAPIView):
         self._notify_nearby_friends(check_in)
 
     def _notify_nearby_friends(self, check_in):
-        """Helper method to notify nearby friends"""
+        """Helper method to notify nearby friends using PointField"""
         venue_location = check_in.venue.location
         nearby_friends = UserProfile.objects.filter(
             friends=self.request.user.profile,
             location_sharing=True,
-            last_location_lat__isnull=False,
-            last_location_lng__isnull=False
-        )
+            location__isnull=False
+        ).annotate(
+            distance=Distance('location', venue_location)
+        ).filter(distance__lte=D(km=5))  # Within 5km
 
         for friend in nearby_friends:
-            friend_location = Point(
-                friend.last_location_lng, 
-                friend.last_location_lat
+            NotificationService.send_nearby_friend_alert(
+                friend.user,
+                self.request.user,
+                check_in.venue
             )
-            if venue_location.distance(friend_location) * 100 <= 5:  # Within 5km
-                NotificationService.send_nearby_friend_alert(
-                    friend.user,
-                    self.request.user,
-                    check_in.venue
-                )
 
 class CheckInDetailView(generics.RetrieveDestroyAPIView):
     serializer_class = CheckInSerializer
@@ -359,34 +358,30 @@ class NearbyFriendsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        try:
-            lat = float(request.query_params.get('latitude'))
-            lng = float(request.query_params.get('longitude'))
-            radius = float(request.query_params.get('radius', 1000))
-        except (TypeError, ValueError):
+        lat = request.query_params.get('latitude')
+        lng = request.query_params.get('longitude')
+        radius = float(request.query_params.get('radius', 1000))  # meters
+
+        if not all([lat, lng]):
             return Response(
-                {"error": "Invalid coordinates or radius"},
+                {"error": "latitude and longitude are required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        user_location = Point(lng, lat, srid=4326)
-        friend_ids = request.user.profile.friends.values_list('id', flat=True)
+        user_location = Point(float(lng), float(lat), srid=4326)
+        friend_ids = request.user.profile.friends.values_list('user__id', flat=True)
 
-        # Create annotated queryset without Point construction in annotation
         nearby_friends = UserProfile.objects.filter(
-            id__in=friend_ids,
+            user__id__in=friend_ids,
             location_sharing=True,
-            last_location_lat__isnull=False,
-            last_location_lng__isnull=False
+            location__isnull=False
         ).annotate(
-            distance=Distance(
-                Point(F('last_location_lng'), F('last_location_lat'), srid=4326),
-                user_location
-            )
+            distance=Distance('location', user_location)
         ).filter(distance__lte=radius)
 
-        serializer = UserProfileSerializer(nearby_friends, many=True)
-        return Response({'nearby_friends': serializer.data})
+        return Response({
+            'nearby_friends': UserProfileSerializer(nearby_friends, many=True).data
+        })
 
 class MeetupPingViewSet(viewsets.ModelViewSet):
     serializer_class = MeetupPingSerializer

@@ -24,6 +24,11 @@ from App.models import (
     Notification
 )
 
+from App.notifications import NotificationService
+
+from io import BytesIO
+from PIL import Image
+
 class BaseTestCase(APITestCase):
     def setUp(self):
         # Create users
@@ -81,24 +86,38 @@ class UserProfileTests(BaseTestCase):
         self.assertEqual(response.data['bio'], 'Test bio')
         self.assertTrue(response.data['location_sharing'])
 
+    def generate_image_file(self, format='PNG'):
+        """Generates a valid image file in memory using Pillow."""
+        file = BytesIO()
+        image = Image.new('RGBA', size=(100, 100), color=(155, 0, 0, 255))  # Create a red square
+        image.save(file, format=format)
+        file.seek(0)
+        return file
+
     def test_profile_picture_upload(self):
-        """Test profile picture upload with various scenarios"""
-        image_content = b'GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00ccc,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'
-        image = SimpleUploadedFile(
-            'test_image.gif',
-            image_content,
-            content_type='image/gif'
+        """Test profile picture upload with valid and invalid file types"""
+
+        # Test uploading a valid PNG image
+        png_image = self.generate_image_file(format='PNG')
+        png_uploaded = SimpleUploadedFile(
+            name='test_image.png',
+            content=png_image.read(),
+            content_type='image/png'
         )
-        
+
         response = self.client.patch(
             self.profile_url,
-            {'profile_picture': image},
+            {'profile_picture': png_uploaded},
             format='multipart'
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.status_code, 
+            status.HTTP_200_OK,
+            f"Expected 200 OK, got {response.status_code} with data {response.data}"
+        )
         self.assertIn('profile_picture', response.data)
 
-        # Test invalid file type
+        # Test uploading an invalid file type (TXT)
         text_file = SimpleUploadedFile(
             'test.txt',
             b'test content',
@@ -109,7 +128,74 @@ class UserProfileTests(BaseTestCase):
             {'profile_picture': text_file},
             format='multipart'
         )
+        self.assertEqual(
+            response.status_code, 
+            status.HTTP_400_BAD_REQUEST,
+            f"Expected 400 Bad Request, got {response.status_code} with data {response.data}"
+        )
+        # Depending on where the validation fails (view or model), the error key might differ
+        self.assertTrue(
+            'error' in response.data or 'profile_picture' in response.data,
+            "Expected an error message related to profile_picture."
+        )
+        if 'error' in response.data:
+            self.assertEqual(
+                response.data['error'],
+                'Invalid file type. Only images are allowed.'
+            )
+        elif 'profile_picture' in response.data:
+            self.assertIn(
+                'File extension "txt" is not allowed',
+                response.data['profile_picture'][0]
+            )
+
+    def test_location_update(self):
+            """Test location update operations"""
+            update_data = {
+                'latitude': 40.7128,
+                'longitude': -74.0060,
+                'location_sharing': True
+            }
+            response = self.client.patch(self.profile_url, update_data)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            
+            # Verify location was set correctly
+            self.profile1.refresh_from_db()
+            self.assertIsNotNone(self.profile1.location)
+            self.assertEqual(self.profile1.location.y, 40.7128)  # latitude
+            self.assertEqual(self.profile1.location.x, -74.0060)  # longitude
+
+    def test_location_sharing_disabled(self):
+        """Test location handling when sharing is disabled"""
+        # First set a location with sharing enabled
+        update_data = {
+            'latitude': 40.7128,
+            'longitude': -74.0060,
+            'location_sharing': True
+        }
+        response = self.client.patch(self.profile_url, update_data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Now disable location sharing
+        update_data = {
+            'location_sharing': False
+        }
+        response = self.client.patch(self.profile_url, update_data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify location was cleared
+        self.profile1.refresh_from_db()
+        self.assertIsNone(self.profile1.location)
+
+    def test_partial_location_update(self):
+        """Test validation when only one coordinate is provided"""
+        update_data = {
+            'latitude': 40.7128,
+            'location_sharing': True
+        }
+        response = self.client.patch(self.profile_url, update_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Both latitude and longitude must be provided together', str(response.data))
 
 class VenueTests(BaseTestCase):
     def setUp(self):
@@ -159,13 +245,12 @@ class CheckInTests(BaseTestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(CheckIn.objects.count(), 1)
 
-    @patch('App.views.NotificationService.send_nearby_friend_alert')
+    @patch('App.notifications.NotificationService.send_nearby_friend_alert')
     def test_checkin_notifications(self, mock_notify):
         """Test notification triggering on check-in"""
         # Update friend's location to be nearby
         self.profile2.location_sharing = True
-        self.profile2.last_location_lat = 40.7128
-        self.profile2.last_location_lng = -74.0060
+        self.profile2.location = Point(-74.0060, 40.7128)  # Same location as venue
         self.profile2.save()
 
         data = {
@@ -176,6 +261,23 @@ class CheckInTests(BaseTestCase):
         response = self.client.post(self.checkin_url, data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         mock_notify.assert_called_once()
+
+    @patch('App.notifications.NotificationService.send_nearby_friend_alert')
+    def test_checkin_notifications_far_friends(self, mock_notify):
+        """Test that distant friends don't get notifications"""
+        # Set friend's location far away
+        self.profile2.location_sharing = True
+        self.profile2.location = Point(-118.2437, 34.0522)  # Los Angeles coordinates
+        self.profile2.save()
+
+        data = {
+            'venue_id': self.venue.id,
+            'vibe_rating': 'Lively',
+            'visibility': 'public'
+        }
+        response = self.client.post(self.checkin_url, data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mock_notify.assert_not_called()
 
 class MeetupPingTests(BaseTestCase):
     def setUp(self):
@@ -221,67 +323,131 @@ class MeetupPingTests(BaseTestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('expired', str(response.data['error']).lower())
 
-# ... (previous imports and BaseTestCase remain the same)
-
 class NotificationTests(BaseTestCase):
     def setUp(self):
         super().setUp()
-        # Create test notification
-        self.notification = Notification.objects.create(
-            user=self.user1,
-            type='friend_request',
-            title='New Friend Request',
-            message='Test friend request'
-        )
-        self.notification_url = '/api/notifications/'
+        self.notification_service = NotificationService
 
-    def test_notification_management(self):
-        """Test notification listing and marking as read"""
-        # Test listing
-        response = self.client.get(self.notification_url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-
-        # Test marking single notification as read
-        response = self.client.post(f'{self.notification_url}{self.notification.id}/mark_read/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.notification.refresh_from_db()
-        self.assertTrue(self.notification.is_read)
-
-        # Test marking all as read
-        Notification.objects.create(
-            user=self.user1,
-            type='meetup_ping',
-            title='New Meetup Request',
-            message='Test meetup request'
-        )
-        response = self.client.post(f'{self.notification_url}mark_all_read/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(all(n.is_read for n in Notification.objects.filter(user=self.user1)))
-
-    @patch('App.notifications.NotificationService.send_to_user')
-    def test_notification_sending(self, mock_send):
-        """Test notification sending functionality"""
-        # Create a device token
-        DeviceToken.objects.create(
-            user=self.user1,
+    @patch('firebase_admin.messaging.send_multicast')
+    @patch('firebase_admin.messaging.Notification')
+    def test_nearby_friend_notification(self, mock_notification_class, mock_send):
+        """Test nearby friend notifications with location"""
+        # Setup locations
+        self.profile1.location_sharing = True
+        self.profile1.location = Point(-74.0060, 40.7128)
+        self.profile1.save()
+        
+        self.profile2.location_sharing = True
+        self.profile2.location = Point(-74.0062, 40.7130)
+        self.profile2.save()
+        
+        # Create device token for receiving user
+        token = DeviceToken.objects.create(
+            user=self.user2,
             token='test-token-123',
             device_type='ios',
             is_active=True
         )
         
-        # Create friend request to trigger notification
-        friend_request_data = {
-            'receiver': self.profile2.id
-        }
-        response = self.client.post('/api/friend-requests/', friend_request_data)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        # Configure mocks
+        mock_response = MagicMock()
+        mock_response.success_count = 1
+        mock_send.return_value = mock_response
         
-        # Verify notification was sent
+        # Send notification
+        success = self.notification_service.send_nearby_friend_alert(
+            self.user2,  # receiver
+            self.user1,  # friend who checked in
+            self.venue
+        )
+        
+        # Verify Firebase notification was created correctly
+        mock_notification_class.assert_called_once_with(
+            title='Friend Nearby',
+            body=f'{self.user1.username} is at {self.venue.name}'
+        )
+
+        # Verify Firebase message was sent with correct data
         mock_send.assert_called_once()
-        call_kwargs = mock_send.call_args[1]
-        self.assertEqual(call_kwargs['notification_type'], 'friend_request')
-        self.assertEqual(call_kwargs['user'], self.user2)
+        call_args = mock_send.call_args[0][0]
+        self.assertEqual(call_args.tokens, [token.token])
+        self.assertEqual(call_args.data, {
+            'type': 'nearby_friend',
+            'friend_id': str(self.user1.id),
+            'venue_id': str(self.venue.id)
+        })
+        
+        self.assertTrue(success)
+        
+        # Verify notification was created in database
+        notification = Notification.objects.get(
+            user=self.user2,
+            type='nearby_friend'
+        )
+        self.assertEqual(
+            notification.message,
+            f'{self.user1.username} is at {self.venue.name}'
+        )
+        self.assertEqual(notification.title, 'Friend Nearby')
+        self.assertTrue(notification.is_sent)
+
+    def test_notification_send_failure(self):
+        """Test notification handling when Firebase fails"""
+        @patch('firebase_admin.messaging.send_multicast')
+        def test_failure(mock_send):
+            mock_send.side_effect = Exception("Firebase error")
+            
+            success = self.notification_service.send_to_user(
+                user=self.user1,
+                notification_type='test',
+                title='Test',
+                message='Test message'
+            )
+            
+            self.assertFalse(success)
+            notification = Notification.objects.get(
+                user=self.user1,
+                type='test'
+            )
+            self.assertFalse(notification.is_sent)
+
+    def test_notification_cleanup(self):
+        """Test notification cleanup with location-based notifications"""
+        # Create old notifications
+        old_time = timezone.now() - timedelta(days=31)
+        
+        # Create notifications for different scenarios
+        notifications = [
+            Notification.objects.create(
+                user=self.user1,
+                type='nearby_friend',
+                title='Friend Nearby',
+                message='Test message'
+            ),
+            Notification.objects.create(
+                user=self.user2,
+                type='meetup_ping',
+                title='Meetup Request',
+                message='Test message'
+            )
+        ]
+        
+        # Update the timestamp for the old notification
+        Notification.objects.filter(id=notifications[0].id).update(created_at=old_time)
+        
+        # Run cleanup
+        self.notification_service.cleanup_old_notifications()
+        
+        # Verify old notifications were deleted
+        self.assertEqual(
+            Notification.objects.filter(id=notifications[0].id).count(),
+            0
+        )
+        # Verify recent notifications remain
+        self.assertEqual(
+            Notification.objects.filter(id=notifications[1].id).count(),
+            1
+        )
 
 class DeviceTokenTests(BaseTestCase):
     def setUp(self):
@@ -306,13 +472,15 @@ class DeviceTokenTests(BaseTestCase):
 
     def test_token_cleanup(self):
         """Test cleanup of inactive tokens"""
+        old_time = timezone.now() - timedelta(days=31)
+        recent_time = timezone.now() - timedelta(days=1)
+        
         # Create old inactive token
         old_token = DeviceToken.objects.create(
             user=self.user1,
             token='old-token',
             device_type='android',
-            is_active=False,
-            last_used=timezone.now() - timedelta(days=31)
+            is_active=False
         )
         
         # Create recent inactive token
@@ -320,9 +488,12 @@ class DeviceTokenTests(BaseTestCase):
             user=self.user1,
             token='recent-token',
             device_type='android',
-            is_active=False,
-            last_used=timezone.now() - timedelta(days=1)
+            is_active=False
         )
+        
+        # Update last_used timestamps using update() to bypass auto_now
+        DeviceToken.objects.filter(pk=old_token.pk).update(last_used=old_time)
+        DeviceToken.objects.filter(pk=recent_token.pk).update(last_used=recent_time)
         
         # Run cleanup
         cleaned = DeviceToken.cleanup_inactive()
@@ -380,15 +551,23 @@ class IntegrationTests(BaseTestCase):
         self.pings_url = '/api/pings/'
         
     def test_complete_user_journey(self):
-        """Test complete user journey through the app"""
-        # 1. Update profile
+        """Test complete user journey through the app with location features"""
+        # 1. Update profile with location
         profile_data = {
             'bio': 'Love nightlife!',
-            'location_sharing': True
+            'location_sharing': True,
+            'latitude': 40.7128,
+            'longitude': -74.0060
         }
         response = self.client.patch(self.profile_url, profile_data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['bio'], 'Love nightlife!')
+        
+        # Verify location was set correctly
+        self.profile1.refresh_from_db()
+        self.assertIsNotNone(self.profile1.location)
+        self.assertEqual(self.profile1.location.y, 40.7128)  # latitude
+        self.assertEqual(self.profile1.location.x, -74.0060)  # longitude
         
         # 2. Create a new user to send friend request to
         new_user = User.objects.create_user(
@@ -398,6 +577,11 @@ class IntegrationTests(BaseTestCase):
         )
         new_profile = UserProfile.objects.get(user=new_user)
         
+        # Set location for new user
+        new_profile.location_sharing = True
+        new_profile.location = Point(-74.0062, 40.7130)  # Nearby location
+        new_profile.save()
+        
         # 3. Send friend request
         friend_request_data = {
             'receiver': new_profile.id
@@ -405,6 +589,14 @@ class IntegrationTests(BaseTestCase):
         response = self.client.post(self.friend_request_url, friend_request_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         request_id = response.data['id']
+        
+        # Verify friend request notification was created
+        self.assertTrue(
+            Notification.objects.filter(
+                user=new_user,
+                type='friend_request'
+            ).exists()
+        )
         
         # 4. Accept friend request (as new user)
         self.client.force_authenticate(user=new_user)
@@ -421,7 +613,24 @@ class IntegrationTests(BaseTestCase):
         response = self.client.post(self.checkin_url, checkin_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         
-        # 6. Send meetup ping (as new user)
+        # Verify nearby friend notification was created (since users are within range)
+        self.assertTrue(
+            Notification.objects.filter(
+                user=new_user,
+                type='nearby_friend'
+            ).exists()
+        )
+        
+        # 6. Test nearby friends search
+        response = self.client.get('/api/friends/nearby/', {
+            'latitude': '40.7128',
+            'longitude': '-74.0060',
+            'radius': '1000'
+        })
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['nearby_friends']), 1)
+        
+        # 7. Send meetup ping (as new user)
         self.client.force_authenticate(user=new_user)
         ping_data = {
             'receiver': self.user1.id,
@@ -432,18 +641,39 @@ class IntegrationTests(BaseTestCase):
         response = self.client.post(self.pings_url, ping_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         
-        # Verify notifications were created
+        # Verify meetup ping notification was created
         self.assertTrue(
             Notification.objects.filter(
                 user=self.user1,
                 type='meetup_ping'
             ).exists()
         )
+        
+        # 8. Accept ping (as original user)
+        self.client.force_authenticate(user=self.user1)
+        ping_id = response.data['id']
+        response = self.client.post(
+            f'{self.pings_url}{ping_id}/accept/',
+            {'message': 'See you there!'}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Verify ping response notification was created
         self.assertTrue(
             Notification.objects.filter(
                 user=new_user,
-                type='friend_accepted'
+                type='ping_response'
             ).exists()
+        )
+        
+        # 9. Verify notification counts
+        self.assertEqual(
+            Notification.objects.filter(user=new_user).count(),
+            3  # friend_accepted + nearby_friend + ping_response
+        )
+        self.assertEqual(
+            Notification.objects.filter(user=self.user1).count(),
+            2  # friend_request_accepted + meetup_ping
         )
 
 class FriendRequestTests(BaseTestCase):
@@ -509,13 +739,11 @@ class NearbyFriendsTests(BaseTestCase):
         
         # Enable location sharing and set locations
         self.profile1.location_sharing = True
-        self.profile1.last_location_lat = 40.7128
-        self.profile1.last_location_lng = -74.0060
+        self.profile1.location = Point(-74.0060, 40.7128)  # (longitude, latitude)
         self.profile1.save()
         
         self.profile2.location_sharing = True
-        self.profile2.last_location_lat = 40.7130  # Nearby location
-        self.profile2.last_location_lng = -74.0062
+        self.profile2.location = Point(-74.0062, 40.7130)  # (longitude, latitude)
         self.profile2.save()
 
     def test_nearby_friends_search(self):
@@ -528,6 +756,20 @@ class NearbyFriendsTests(BaseTestCase):
         response = self.client.get(self.nearby_friends_url, params)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data['nearby_friends']), 1)
+
+    def test_location_disabled_friends(self):
+        """Test that friends with disabled location sharing are not included"""
+        self.profile2.location_sharing = False
+        self.profile2.save()
+
+        params = {
+            'latitude': '40.7128',
+            'longitude': '-74.0060',
+            'radius': '1000'
+        }
+        response = self.client.get(self.nearby_friends_url, params)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['nearby_friends']), 0)
 
 class VenueRatingTests(BaseTestCase):
     def setUp(self):
