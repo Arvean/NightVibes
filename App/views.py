@@ -3,10 +3,10 @@ from django.contrib.auth.models import User
 from django.contrib.gis.db.models.functions import Distance
 from django.contrib.gis.measure import D
 from django.contrib.gis.geos import Point
-from django.db.models import Count, Q, F
+from django.db.models import Count, Q, F, ExpressionWrapper, FloatField
 from django.utils import timezone
 from django.db import transaction
-from django.shortcuts import get_object_or_404  # Add this import
+from django.shortcuts import get_object_or_404
 from django.http import Http404
 
 # Rest Framework imports
@@ -17,14 +17,19 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.parsers import MultiPartParser, FormParser
 
-from .serializers import CustomTokenObtainPairSerializer
-from .notifications import NotificationService  # Create this file
-
-from io import BytesIO
-from PIL import Image
-
-
-# Local imports
+from .serializers import (
+    CustomTokenObtainPairSerializer,
+    UserSerializer,
+    UserProfileSerializer,
+    FriendRequestSerializer,
+    VenueSerializer,
+    CheckInSerializer,
+    VenueRatingSerializer,
+    MeetupPingSerializer,
+    DeviceTokenSerializer,
+    NotificationSerializer
+)
+from .notifications import NotificationService
 from .models import (
     CheckIn,
     FriendRequest,
@@ -35,91 +40,86 @@ from .models import (
     DeviceToken,
     Notification
 )
-from .serializers import (
-    CheckInSerializer,
-    FriendRequestSerializer,
-    UserProfileSerializer,
-    UserSerializer,
-    VenueRatingSerializer,
-    VenueSerializer,
-    MeetupPingSerializer,
-    DeviceTokenSerializer,
-    NotificationSerializer
-)
-from .notifications import NotificationService
 
-class RegisterView(generics.CreateAPIView):
-    queryset = User.objects.all()
+class VenueListView(generics.ListCreateAPIView):
+    serializer_class = VenueSerializer
     permission_classes = [permissions.AllowAny]
-    serializer_class = UserSerializer
-
-    def perform_create(self, serializer):
-        user = serializer.save()
-
-class CustomTokenObtainPairView(TokenObtainPairView):
-    serializer_class = UserSerializer
-
-class UserProfileView(generics.RetrieveUpdateAPIView):
-    serializer_class = UserProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    parser_classes = (MultiPartParser, FormParser)
-
-    def get_object(self):
-        return self.request.user.profile
-
-    def perform_update(self, serializer):
-        instance = serializer.instance
-        
-        # Handle profile picture update
-        if 'profile_picture' in self.request.FILES:
-            # Delete old picture if it exists
-            if instance.profile_picture:
-                try:
-                    instance.profile_picture.delete(save=False)
-                except Exception as e:
-                    print(f"Error deleting profile picture: {e}")
-        
-        serializer.save()
-
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-
-        # Handle file validation
-        if 'profile_picture' in request.FILES:
-            file = request.FILES['profile_picture']
-            if not file.content_type.startswith('image/'):
-                return Response(
-                    {'error': 'Invalid file type. Only images are allowed.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Check file size (5MB limit)
-            if file.size > 5 * 1024 * 1024:
-                return Response(
-                    {'error': 'File too large. Maximum size is 5MB.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-        serializer = self.get_serializer(
-            instance,
-            data=request.data,
-            partial=partial
-        )
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-
-        return Response(serializer.data)
-
-class FriendRequestListCreateView(generics.ListCreateAPIView):
-    serializer_class = FriendRequestSerializer
-    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        user = self.request.user
-        return FriendRequest.objects.filter(
-            Q(sender=user) | Q(receiver=user)
-        )
+        queryset = Venue.objects.all()
+        
+        # Get query parameters
+        search = self.request.query_params.get('search', None)
+        category = self.request.query_params.get('category', None)
+        sort_by = self.request.query_params.get('sort_by', 'distance')
+        latitude = self.request.query_params.get('latitude', None)
+        longitude = self.request.query_params.get('longitude', None)
+
+        # Apply filters
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) |
+                Q(description__icontains=search)
+            )
+        if category:
+            queryset = queryset.filter(category__iexact=category)
+
+        # Add distance annotation if coordinates provided
+        if latitude and longitude:
+            user_location = Point(float(longitude), float(latitude), srid=4326)
+            queryset = queryset.annotate(
+                distance=Distance('location', user_location)
+            )
+
+        # Sort venues
+        if sort_by == 'popularity':
+            # Calculate popularity scores
+            recent_time = timezone.now() - timezone.timedelta(hours=24)
+            queryset = queryset.annotate(
+                recent_checkins=Count(
+                    'checkin',
+                    filter=Q(checkin__timestamp__gte=recent_time)
+                ),
+                avg_rating=ExpressionWrapper(
+                    F('ratings__rating__avg'),
+                    output_field=FloatField()
+                )
+            ).order_by('-recent_checkins', '-avg_rating')
+        elif latitude and longitude:
+            # Sort by distance if coordinates provided
+            queryset = queryset.order_by('distance')
+
+        return queryset
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        # Include vibe and popularity data based on query params
+        context['include_vibe'] = self.request.query_params.get('include_vibe', 'true').lower() == 'true'
+        context['include_popularity'] = self.request.query_params.get('include_popularity', 'true').lower() == 'true'
+        return context
+
+class VenueDetailView(viewsets.ModelViewSet):
+    queryset = Venue.objects.all()
+    serializer_class = VenueSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['include_vibe'] = True
+        context['include_popularity'] = True
+        return context
+
+    @action(detail=True, methods=['get'])
+    def current_vibe(self, request, pk=None):
+        venue = self.get_object()
+        vibe = venue.get_current_vibe()
+        
+        return Response({
+            'vibe': vibe or 'Unknown',
+            'popularity_score': venue.get_popularity_score(),
+            'updated_at': timezone.now().isoformat()
+        })
+
 
     def perform_create(self, serializer):
         friend_request = serializer.save(sender=self.request.user)

@@ -198,13 +198,50 @@ class Venue(models.Model):
         return self.name
 
     def get_current_vibe(self):
+        """Calculate and return the current vibe of the venue based on recent check-ins"""
         cache_key = f'venue_vibe_{self.id}'
         vibe = cache.get(cache_key)
+        
         if vibe is None:
             with transaction.atomic():
-                vibe = self._calculate_current_vibe()
-                cache.set(cache_key, vibe, timeout=300)  # 5 minutes
+                # Get check-ins from the last 2 hours
+                recent_time = timezone.now() - timedelta(hours=2)
+                recent_checkins = CheckIn.objects.filter(
+                    venue=self,
+                    timestamp__gte=recent_time
+                ).values('vibe_rating').annotate(count=Count('id'))
+
+                if not recent_checkins:
+                    # If no recent check-ins, return None or a default value
+                    vibe = None
+                else:
+                    # Get the most common vibe rating
+                    vibe = max(recent_checkins, key=lambda x: x['count'])['vibe_rating']
+                
+                # Cache the result for 5 minutes
+                cache.set(cache_key, vibe, timeout=300)
+        
         return vibe
+
+    def get_popularity_score(self):
+        """Calculate venue popularity based on check-ins and ratings"""
+        recent_time = timezone.now() - timedelta(hours=24)
+        
+        # Get number of check-ins in last 24 hours
+        checkin_count = CheckIn.objects.filter(
+            venue=self,
+            timestamp__gte=recent_time
+        ).count()
+        
+        # Get average rating
+        avg_rating = VenueRating.objects.filter(venue=self).aggregate(
+            models.Avg('rating')
+        )['rating__avg'] or 0
+        
+        # Combine metrics (you can adjust the weights)
+        popularity_score = (checkin_count * 0.7) + (avg_rating * 0.3)
+        
+        return round(popularity_score, 2)
 
 # CheckIn Model
 # Tracks user visits to venues with atmosphere ratings

@@ -68,7 +68,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
             
         return data
 
-
     def validate_profile_picture(self, value):
         if value:
             # Validate file type
@@ -123,11 +122,12 @@ class FriendRequestSerializer(serializers.ModelSerializer):
 class VenueSerializer(serializers.ModelSerializer):
     distance = serializers.SerializerMethodField()
     current_vibe = serializers.SerializerMethodField()
+    popularity_score = serializers.SerializerMethodField()
     
     class Meta:
         model = Venue
         fields = ['id', 'name', 'address', 'city', 'location', 'description', 
-                 'category', 'distance', 'current_vibe']
+                 'category', 'distance', 'current_vibe', 'popularity_score']
         
     def get_distance(self, obj):
         if hasattr(obj, 'distance'):
@@ -135,20 +135,24 @@ class VenueSerializer(serializers.ModelSerializer):
         return None
         
     def get_current_vibe(self, obj):
-        cache_key = f'venue_vibe_{obj.id}'
-        vibe = cache.get(cache_key)
-        if vibe is None:
-            recent_checkins = CheckIn.objects.filter(
-                venue=obj,
-                timestamp__gte=timezone.now() - timezone.timedelta(hours=2)
-            ).values('vibe_rating').annotate(count=Count('id')).order_by('-count')
+        include_vibe = self.context.get('include_vibe', True)
+        if not include_vibe:
+            return None
             
-            vibe = {
-                'rating': recent_checkins[0]['vibe_rating'] if recent_checkins else 'Unknown',
-                'count': sum(c['count'] for c in recent_checkins)
+        vibe = obj.get_current_vibe()
+        if vibe:
+            return {
+                'rating': vibe,
+                'updated_at': timezone.now().isoformat()
             }
-            cache.set(cache_key, vibe, timeout=300)  # Cache for 5 minutes
-        return vibe
+        return None
+
+    def get_popularity_score(self, obj):
+        include_popularity = self.context.get('include_popularity', True)
+        if not include_popularity:
+            return None
+            
+        return obj.get_popularity_score()
 
 class CheckInSerializer(serializers.ModelSerializer):
     venue_id = serializers.IntegerField()
@@ -200,11 +204,6 @@ class VenueRatingSerializer(serializers.ModelSerializer):
         validated_data['user'] = request.user
         return super().create(validated_data)
 
-class MeetupPingSerializer(serializers.ModelSerializer):
-    sender_username = serializers.CharField(source='sender.username', read_only=True)
-    receiver_username = serializers.CharField(source='receiver.username', read_only=True)
-    venue_name = serializers.CharField(source='venue.name', read_only=True)
-    
 class MeetupPingSerializer(serializers.ModelSerializer):
     sender_username = serializers.SerializerMethodField()
     receiver_username = serializers.SerializerMethodField()
