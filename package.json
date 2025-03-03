@@ -1,0 +1,21 @@
+{
+  "jest": {
+    "preset": "react-native",
+    "setupFiles": [
+      "<rootDir>/src/setupTests.js"
+    ],
+    "transform": {
+      "^.+\\.(js|jsx|ts|tsx)$": "babel-jest"
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!(react-native|@react-native|@react-navigation|react-navigation|@react-native-community)/)"
+    ],
+    "moduleNameMapper": {
+      "^react-native$": "<rootDir>/node_modules/react-native",
+      "^react-native/(.*)": "<rootDir>/node_modules/react-native/$1"
+    }
+  },
+  "devDependencies": {
+    "react-native-device-info": "^14.0.4"
+  }
+}

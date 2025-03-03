@@ -1,0 +1,3 @@
+[submodule "NightVibesUI"]
+	path = NightVibesUI
+	url = https://github.com/Arvean/NightVibes.git
